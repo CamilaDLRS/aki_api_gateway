@@ -1,0 +1,553 @@
+openapi: 3.0.3
+info:
+  title: AKI! - API Gateway (Proxy BFF)
+  version: '3.0.0'
+  description: |
+    Documentação servida pelo API Gateway. Os endpoints abaixo são proxied para o BFF.
+    Atenção: futuras versões podem exigir autenticação JWT no gateway.
+  contact:
+    name: AKI! Infra
+    email: infra@aki.example
+servers:
+  - url: https://aki-api-gateway-bnfpfqhddfh6f8gn.eastus2-01.azurewebsites.net
+    description: API Gateway Prod
+  - url: http://localhost:3001
+    description: API Gateway Local
+security:
+  - bearerAuth: []
+tags:
+  - name: Auth
+    description: Authentication and password recovery
+  - name: Events
+    description: Event management (list, create, edit, delete, QR)
+  - name: Classes
+    description: Class management and membership
+  - name: Students
+    description: Student management and device operations
+  - name: Attendance
+    description: Attendance records and editing
+  - name: Device
+    description: Device registration and attendance (Student frontend)
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Teacher login
+      description: Authenticate teacher via Personas.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Teacher'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Teacher password recovery
+      description: Triggers password recovery email via Personas/Azure Function.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+      responses:
+        '200':
+          description: Recovery email sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  sent_at:
+                    type: string
+                    format: date-time
+        '404':
+          description: Email not registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /events:
+    get:
+      tags: [Events]
+      summary: List events
+      description: List events, filter by class, teacher, status. Aggregates Core, enriches with class/teacher names from Personas.
+      parameters:
+        - name: class_id
+          in: query
+          schema:
+            type: integer
+        - name: teacher_id
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, closed, canceled]
+      responses:
+        '200':
+          description: Paged list of events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedEvents'
+    post:
+      tags: [Events]
+      summary: Create event
+      description: Create event in Core, validate class/teacher via Personas.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventCreate'
+      responses:
+        '201':
+          description: Event created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+  /events/{eventId}:
+    get:
+      tags: [Events]
+      summary: Get event details
+      description: Get event details, enrich with class/teacher info.
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Event found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+    put:
+      tags: [Events]
+      summary: Edit event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventUpdate'
+      responses:
+        '200':
+          description: Event updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+    delete:
+      tags: [Events]
+      summary: Delete event
+      responses:
+        '204':
+          description: Event deleted
+  /events/{eventId}/qr:
+    get:
+      tags: [Events]
+      summary: Get QR code for event
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: QR token and SVG
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  qr_token:
+                    type: string
+                  expires_at:
+                    type: string
+                    format: date-time
+                  qr_image_svg:
+                    type: string
+  /classes:
+    get:
+      tags: [Classes]
+      summary: List classes
+      description: List classes from Personas.
+      responses:
+        '200':
+          description: Paged classes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedClasses'
+  /classes/{classId}:
+    get:
+      tags: [Classes]
+      summary: Get class details
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Class details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassWithMembers'
+  /classes/{classId}/students:
+    get:
+      tags: [Classes]
+      summary: List students in class
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Student list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Student'
+  /students/{studentId}:
+    get:
+      tags: [Students]
+      summary: Get student details
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Student found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Student'
+  /students/{studentId}/clear-device:
+    post:
+      tags: [Students]
+      summary: Clear/unlink device from student
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Device cleared
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Student'
+  /attendances:
+    get:
+      tags: [Attendance]
+      summary: List attendance records
+      parameters:
+        - name: event_id
+          in: query
+          schema:
+            type: string
+        - name: student_id
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paged attendances
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedAttendances'
+  /attendances/{attendanceId}:
+    put:
+      tags: [Attendance]
+      summary: Edit attendance
+      parameters:
+        - name: attendanceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttendanceUpdate'
+      responses:
+        '200':
+          description: Attendance updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attendance'
+  /student-device:
+    post:
+      tags: [Device]
+      summary: Register device for student (Student frontend)
+      description: Validates device, student, class; records attendance.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [qr_token, device_id, student_cpf]
+              properties:
+                qr_token:
+                  type: string
+                device_id:
+                  type: string
+                student_cpf:
+                  type: string
+      responses:
+        '201':
+          description: Device registered and attendance recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attendance'
+  /student-attendance:
+    post:
+      tags: [Device]
+      summary: Register attendance by CPF (Student frontend)
+      description: Validates student/class; records attendance.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [qr_token, student_cpf]
+              properties:
+                qr_token:
+                  type: string
+                student_cpf:
+                  type: string
+      responses:
+        '201':
+          description: Attendance recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attendance'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            type: string
+    Teacher:
+      type: object
+      properties:
+        id:
+          type: integer
+        full_name:
+          type: string
+        email:
+          type: string
+    Student:
+      type: object
+      properties:
+        id:
+          type: integer
+        cpf:
+          type: string
+        full_name:
+          type: string
+        device_id:
+          type: string
+          nullable: true
+    ClassWithMembers:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        students:
+          type: array
+          items:
+            $ref: '#/components/schemas/Student'
+        teachers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Teacher'
+    PagedEvents:
+      type: object
+      properties:
+        meta:
+          type: object
+          properties:
+            page:
+              type: integer
+            size:
+              type: integer
+            total:
+              type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Event'
+    Event:
+      type: object
+      properties:
+        id:
+          type: string
+        class_id:
+          type: integer
+        teacher_id:
+          type: integer
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        status:
+          type: string
+        qr_token:
+          type: string
+        class_name:
+          type: string
+        teacher_name:
+          type: string
+    EventCreate:
+      type: object
+      required: [class_id, teacher_id, start_time, end_time]
+      properties:
+        class_id:
+          type: integer
+        teacher_id:
+          type: integer
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+    EventUpdate:
+      type: object
+      properties:
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        status:
+          type: string
+    PagedClasses:
+      type: object
+      properties:
+        meta:
+          type: object
+          properties:
+            page:
+              type: integer
+            size:
+              type: integer
+            total:
+              type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClassWithMembers'
+    PagedAttendances:
+      type: object
+      properties:
+        meta:
+          type: object
+          properties:
+            page:
+              type: integer
+            size:
+              type: integer
+            total:
+              type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Attendance'
+    Attendance:
+      type: object
+      properties:
+        id:
+          type: string
+        event_id:
+          type: string
+        student_id:
+          type: integer
+        status:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+    AttendanceUpdate:
+      type: object
+      properties:
+        status:
+          type: string
+        note:
+          type: string
